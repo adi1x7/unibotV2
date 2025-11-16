@@ -1,0 +1,276 @@
+"""
+PDF processor for UniBot
+Extracts text content from PDF files found on college websites
+"""
+from typing import Optional, Dict
+import requests
+from io import BytesIO
+import PyPDF2
+import pdfplumber
+import os
+import signal
+import re
+from contextlib import contextmanager
+
+class PDFProcessor:
+    """Process PDF files and extract text content"""
+    
+    @staticmethod
+    def is_pdf_url(url: str) -> bool:
+        """Check if URL points to a PDF file"""
+        url_lower = url.lower()
+        return url_lower.endswith('.pdf') or 'application/pdf' in url_lower
+    
+    @staticmethod
+    def download_pdf(url: str, timeout: int = 15) -> Optional[BytesIO]:
+        """Download PDF from URL with timeout"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=timeout, stream=True)
+            response.raise_for_status()
+            
+            # Check if it's actually a PDF
+            content_type = response.headers.get('Content-Type', '').lower()
+            if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
+                return None
+            
+            # Quick validation - check if it starts with PDF magic bytes
+            content = response.content
+            if len(content) < 4 or not content[:4].startswith(b'%PDF'):
+                return None  # Not a valid PDF
+            
+            return BytesIO(content)
+        except requests.Timeout:
+            return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def extract_text_pypdf2(pdf_bytes: BytesIO) -> str:
+        """Extract text using PyPDF2"""
+        try:
+            pdf_bytes.seek(0)
+            pdf_reader = PyPDF2.PdfReader(pdf_bytes)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
+            return text.strip()
+        except Exception:
+            # Silently fail - errors are handled at higher level
+            return ""
+    
+    @staticmethod
+    def extract_text_pdfplumber(pdf_bytes: BytesIO, max_pages: int = 100) -> str:
+        """Extract text using pdfplumber (better for complex PDFs) with page limit"""
+        try:
+            pdf_bytes.seek(0)
+            text = ""
+            with pdfplumber.open(pdf_bytes) as pdf:
+                # Limit pages to prevent hanging on huge PDFs
+                pages_to_process = min(len(pdf.pages), max_pages)
+                for i, page in enumerate(pdf.pages[:pages_to_process]):
+                    try:
+                        # Try extracting text with layout preservation
+                        page_text = page.extract_text(layout=True)
+                        if not page_text:
+                            # Fallback to simple extraction
+                            page_text = page.extract_text()
+                        
+                        if page_text:
+                            # Clean up the text
+                            page_text = PDFProcessor._clean_text(page_text)
+                            if page_text:
+                                text += page_text + "\n"
+                    except Exception:
+                        # Skip problematic pages
+                        continue
+            return text.strip()
+        except Exception:
+            # Silently fail - errors are handled at higher level
+            return ""
+    
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        """Clean extracted text to improve quality"""
+        if not text:
+            return ""
+        
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove single character lines that are likely artifacts
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            # Keep lines that are meaningful (more than 2 chars, or contain numbers/letters)
+            if len(line) > 2 or (line and any(c.isalnum() for c in line)):
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines).strip()
+    
+    @staticmethod
+    def _is_garbled_text(text: str) -> bool:
+        """
+        Detect if text is garbled (character-by-character extraction or poor quality)
+        
+        Returns True if text appears to be garbled/low quality
+        """
+        if not text or len(text) < 50:
+            return True
+        
+        # Check for excessive single-character words (sign of garbled extraction)
+        words = text.split()
+        if len(words) < 10:
+            return True
+        
+        single_char_words = sum(1 for word in words if len(word) == 1)
+        if len(words) > 0 and single_char_words / len(words) > 0.3:  # More than 30% single chars
+            return True
+        
+        # Check for excessive whitespace between characters (another sign of garbled text)
+        if re.search(r'\s+[a-zA-Z]\s+[a-zA-Z]\s+[a-zA-Z]', text):
+            # Pattern like "a b c d" suggests character-by-character extraction
+            if text.count(' ') > len(text) * 0.4:  # More than 40% spaces
+                return True
+        
+        # Check for very low word-to-character ratio (suggests poor extraction)
+        if len(words) > 0:
+            avg_word_length = sum(len(word) for word in words) / len(words)
+            if avg_word_length < 2.0:  # Average word less than 2 chars
+                return True
+        
+        # Check for readable text patterns (good sign)
+        # Look for common words or patterns
+        common_patterns = [
+            r'\bthe\b', r'\band\b', r'\bis\b', r'\bto\b', r'\bof\b',
+            r'\b[a-z]{3,}\s+[a-z]{3,}',  # Two words of 3+ chars
+            r'\d+',  # Numbers
+        ]
+        
+        pattern_matches = sum(1 for pattern in common_patterns if re.search(pattern, text.lower()))
+        if pattern_matches < 2:  # Very few common patterns found
+            return True
+        
+        return False
+    
+    @staticmethod
+    def _calculate_text_quality_score(text: str) -> float:
+        """
+        Calculate a quality score for extracted text (0.0 to 1.0)
+        Higher score = better quality
+        """
+        if not text or len(text) < 50:
+            return 0.0
+        
+        score = 1.0
+        
+        # Penalize excessive single-character words
+        words = text.split()
+        if len(words) > 0:
+            single_char_ratio = sum(1 for word in words if len(word) == 1) / len(words)
+            score -= single_char_ratio * 0.5  # Penalty up to 0.5
+        
+        # Penalize excessive whitespace
+        space_ratio = text.count(' ') / len(text) if len(text) > 0 else 0
+        if space_ratio > 0.3:
+            score -= (space_ratio - 0.3) * 0.5  # Penalty for excessive spaces
+        
+        # Reward for common words and patterns
+        common_words = ['the', 'and', 'is', 'to', 'of', 'in', 'for', 'a', 'an']
+        text_lower = text.lower()
+        found_common = sum(1 for word in common_words if word in text_lower)
+        score += min(found_common / 10.0, 0.2)  # Bonus up to 0.2
+        
+        # Reward for longer words (indicates better extraction)
+        if len(words) > 0:
+            avg_word_len = sum(len(word) for word in words) / len(words)
+            if avg_word_len > 4:
+                score += 0.1  # Bonus for longer average words
+        
+        return max(0.0, min(1.0, score))  # Clamp between 0 and 1
+    
+    @staticmethod
+    def extract_text(url: str) -> Optional[Dict[str, str]]:
+        """
+        Extract text from PDF URL with quality checks
+        
+        Returns:
+            Dictionary with 'content', 'url', 'title', 'type', 'quality_score', 'page_count' or None if failed
+        """
+        pdf_bytes = PDFProcessor.download_pdf(url)
+        if not pdf_bytes:
+            return None
+        
+        # Try pdfplumber first (better quality)
+        text = PDFProcessor.extract_text_pdfplumber(pdf_bytes)
+        used_pdfplumber = True
+        page_count = 0
+        
+        # Get page count
+        try:
+            pdf_bytes.seek(0)
+            with pdfplumber.open(pdf_bytes) as pdf:
+                page_count = len(pdf.pages)
+        except Exception:
+            pass
+        
+        # Fallback to PyPDF2 if pdfplumber fails or produces poor results
+        if not text or len(text) < 50:
+            pdf_bytes.seek(0)
+            text = PDFProcessor.extract_text_pypdf2(pdf_bytes)
+            used_pdfplumber = False
+            if not page_count:
+                try:
+                    pdf_bytes.seek(0)
+                    pdf_reader = PyPDF2.PdfReader(pdf_bytes)
+                    page_count = len(pdf_reader.pages)
+                except Exception:
+                    pass
+        
+        if not text or len(text) < 50:
+            return None
+        
+        # Clean the text
+        text = PDFProcessor._clean_text(text)
+        
+        # Check if text is garbled - try alternative method if needed
+        if PDFProcessor._is_garbled_text(text) and used_pdfplumber:
+            # Try PyPDF2 as alternative if pdfplumber gave garbled results
+            pdf_bytes.seek(0)
+            alt_text = PDFProcessor.extract_text_pypdf2(pdf_bytes)
+            alt_text = PDFProcessor._clean_text(alt_text)
+            if alt_text and len(alt_text) >= 50 and not PDFProcessor._is_garbled_text(alt_text):
+                text = alt_text
+                used_pdfplumber = False
+        
+        # Calculate quality score
+        quality_score = PDFProcessor._calculate_text_quality_score(text)
+        
+        # Filter out very low quality extractions (quality score < 0.3)
+        if quality_score < 0.3:
+            return None
+        
+        # Extract title from URL
+        title = os.path.basename(url).replace('.pdf', '').replace('_', ' ').replace('-', ' ')
+        
+        return {
+            'url': url,
+            'content': text,
+            'title': title,
+            'type': 'pdf',
+            'quality_score': quality_score,
+            'page_count': page_count
+        }
+    
+    @staticmethod
+    def process_pdf_url(url: str) -> Optional[Dict[str, str]]:
+        """
+        Process PDF URL (alias for extract_text for compatibility)
+        
+        Returns:
+            Dictionary with PDF content or None if failed
+        """
+        return PDFProcessor.extract_text(url)
