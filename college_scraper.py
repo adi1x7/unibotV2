@@ -257,7 +257,7 @@ class CollegeScraper:
         Returns:
             Dictionary with PDF content or None if failed
         """
-        if not self.pdf_processor or not self.pdf_processor.is_pdf_url(url):
+        if not self.pdf_processor or not PDFProcessor.is_pdf_url(url):
             return None
         
         normalized_url = self._normalize_url(url)
@@ -300,7 +300,7 @@ class CollegeScraper:
             Dictionary with page content or None if failed
         """
         # Check if it's a PDF first
-        if self.pdf_processor and self.pdf_processor.is_pdf_url(url):
+        if self.pdf_processor and PDFProcessor.is_pdf_url(url):
             return await self.scrape_pdf(url)
         
         # Store original URL for metadata

@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from typing import List, Any, Optional, Dict
@@ -13,6 +13,7 @@ from sidekick_tools import playwright_tools, other_tools
 from rag_system import RAGSystem
 import uuid
 import asyncio
+import os
 from datetime import datetime
 
 load_dotenv(override=True)
@@ -46,29 +47,47 @@ class UniBot:
         self.college_website_url = college_website_url
 
     async def setup(self):
+        # Verify API key is set
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY environment variable is not set. "
+                "Please set it in your .env file or environment variables."
+            )
+        
         self.tools, self.browser, self.playwright = await playwright_tools()
         self.tools += await other_tools(rag_system=self.rag_system)
-        worker_llm = ChatOpenAI(model="gpt-4o-mini")
+        
+        # Use gemini-2.5-flash (latest, fast, widely available)
+        # If this doesn't work, try gemini-1.5-pro or check available models with list_available_models.py
+        worker_model = "gemini-2.5-flash"
+        worker_llm = ChatGoogleGenerativeAI(model=worker_model)
         self.worker_llm_with_tools = worker_llm.bind_tools(self.tools)
-        evaluator_llm = ChatOpenAI(model="gpt-4o-mini")
+        evaluator_llm = ChatGoogleGenerativeAI(model=worker_model)
         self.evaluator_llm_with_output = evaluator_llm.with_structured_output(EvaluatorOutput)
         await self.build_graph()
 
     def worker(self, state: State) -> Dict[str, Any]:
         system_message = f"""You are UniBot, a college query assistant for answering questions about the college.
     You have access to a knowledge base containing information scraped from the college website.
-    When users ask questions about the college, courses, admissions, faculty, facilities, policies, or events,
-    you should FIRST use the query_college_knowledge_base tool to search for relevant information.
+    
+    CRITICAL RULE: For ANY question about the college, courses, admissions, faculty, facilities, policies, events, or ANY college-related information,
+    you MUST ALWAYS call the query_college_knowledge_base tool FIRST before providing any answer. 
+    DO NOT answer directly without searching the knowledge base first.
+    
+    WORKFLOW:
+    1. User asks a question about the college
+    2. You MUST call query_college_knowledge_base with the user's question
+    3. Wait for the tool to return results
+    4. Use the information from the tool results to answer the user
+    5. Include the source links from the tool output
     
     IMPORTANT: Do NOT scrape the website unless the user explicitly asks you to do so. The knowledge base should already have the information you need.
     Only use the scrape_college_website tool if:
     - The user explicitly requests you to scrape the website
     - The user asks you to update or refresh the knowledge base
     
-    If the knowledge base doesn't have enough information for a user's question, you should:
-    1. Tell the user that the information is not available in the knowledge base
-    2. Suggest they ask you to scrape the website if they want to add more information
-    3. Do NOT automatically scrape without explicit user request
+    If the knowledge base doesn't have enough information for a user's question, simply tell the user that the information is not available in the knowledge base. Do not suggest any alternative actions or scraping.
     
     SOURCE CITATION: When you provide information from the knowledge base, ALWAYS include the source links at the end of your response.
     The knowledge base tool will provide a "Sources:" section with URLs formatted as markdown links like [URL](URL).
@@ -88,6 +107,10 @@ class UniBot:
 
     This is the success criteria:
     {state['success_criteria']}
+    
+    REMEMBER: For college-related questions, you MUST call query_college_knowledge_base tool first. 
+    Do not provide answers without searching the knowledge base first.
+    
     You should reply either with a question for the user about this assignment, or with your final response.
     If you have a question for the user, you need to reply by clearly stating your question. An example might be:
 
@@ -143,7 +166,21 @@ class UniBot:
         return conversation
         
     def evaluator(self, state: State) -> State:
-        last_response = state["messages"][-1].content
+        if not state["messages"]:
+            return {
+                "messages": [{"role": "assistant", "content": "No messages to evaluate"}],
+                "feedback_on_work": "No messages found",
+                "success_criteria_met": False,
+                "user_input_needed": True
+            }
+        last_message = state["messages"][-1]
+        # Handle both message objects and dicts
+        if hasattr(last_message, 'content'):
+            last_response = last_message.content or ""
+        elif isinstance(last_message, dict):
+            last_response = last_message.get('content', '')
+        else:
+            last_response = str(last_message) if last_message else ""
 
         system_message = f"""You are an evaluator that determines if a task has been completed successfully by an Assistant.
     Assess the Assistant's last response based on the given criteria. Respond with your feedback, and with your decision on whether the success criteria has been met,
@@ -210,13 +247,24 @@ class UniBot:
     async def run_superstep(self, message, success_criteria, history):
         config = {"configurable": {"thread_id": self.unibot_id}}
 
-        # Ensure message is properly formatted as a HumanMessage
+        # Convert history to message format if provided
+        messages = []
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+
+        # Add the current message
         if isinstance(message, str):
-            messages = [HumanMessage(content=message)]
+            messages.append(HumanMessage(content=message))
         elif isinstance(message, list):
-            messages = message
+            messages.extend(message)
         else:
-            messages = [HumanMessage(content=str(message))]
+            messages.append(HumanMessage(content=str(message)))
 
         state = {
             "messages": messages,
@@ -233,21 +281,48 @@ class UniBot:
         
         # Get the assistant's reply (skip evaluator feedback which is the last message)
         # The assistant's reply is the second-to-last message (before evaluator feedback)
-        assistant_reply = result["messages"][-2].content if len(result["messages"]) >= 2 else ""
+        assistant_message = result["messages"][-2] if len(result["messages"]) >= 2 else None
+        if assistant_message:
+            # Extract content, handling different formats (string, list, etc.)
+            assistant_content = assistant_message.content
+            if isinstance(assistant_content, list):
+                # Handle list format from new Gemini models
+                text_parts = []
+                for item in assistant_content:
+                    if isinstance(item, dict) and 'text' in item:
+                        text_parts.append(item['text'])
+                    elif isinstance(item, str):
+                        text_parts.append(item)
+                assistant_reply = '\n'.join(text_parts) if text_parts else str(assistant_content)
+            elif isinstance(assistant_content, dict):
+                assistant_reply = assistant_content.get('text', str(assistant_content))
+            else:
+                assistant_reply = str(assistant_content) if assistant_content else ""
+        else:
+            assistant_reply = ""
         reply = {"role": "assistant", "content": assistant_reply}
         
         # Return only user and assistant messages (no evaluator feedback)
         return history + [user, reply]
     
     def cleanup(self):
-        if self.browser:
+        """Cleanup browser and playwright resources"""
+        if self.browser or self.playwright:
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self.browser.close())
+                # If we're in an async context, schedule cleanup
+                if self.browser:
+                    loop.create_task(self.browser.close())
                 if self.playwright:
                     loop.create_task(self.playwright.stop())
             except RuntimeError:
-                # If no loop is running, do a direct run
-                asyncio.run(self.browser.close())
-                if self.playwright:
-                    asyncio.run(self.playwright.stop())
+                # If no loop is running, create one and run cleanup
+                async def cleanup_async():
+                    if self.browser:
+                        await self.browser.close()
+                    if self.playwright:
+                        await self.playwright.stop()
+                try:
+                    asyncio.run(cleanup_async())
+                except Exception as e:
+                    print(f"Warning: Error during cleanup: {e}")

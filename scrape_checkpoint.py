@@ -28,9 +28,9 @@ class ScrapeCheckpoint:
             try:
                 with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
                     self.checkpoint_data = json.load(f)
-                print(f"📋 Loaded checkpoint: {self.checkpoint_data['scraped_count']} pages, {len(self.checkpoint_data['pdf_urls'])} PDFs queued")
+                print(f"Loaded checkpoint: {self.checkpoint_data['scraped_count']} pages, {len(self.checkpoint_data['pdf_urls'])} PDFs queued")
             except Exception as e:
-                print(f"⚠️  Could not load checkpoint: {e}")
+                print(f"WARNING: Could not load checkpoint: {e}")
                 self.checkpoint_data = {
                     'scraped_content': [],
                     'pdf_urls': [],
@@ -55,7 +55,7 @@ class ScrapeCheckpoint:
             with open(CHECKPOINT_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.checkpoint_data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"⚠️  Could not save checkpoint: {e}")
+            print(f"WARNING: Could not save checkpoint: {e}")
     
     def get_checkpoint(self) -> Dict:
         """Get checkpoint data"""
@@ -73,5 +73,5 @@ class ScrapeCheckpoint:
             'scraped_count': 0,
             'last_updated': None
         }
-        print("🗑️  Checkpoint cleared")
+        print("Checkpoint cleared")
 

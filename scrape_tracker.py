@@ -23,9 +23,9 @@ class ScrapeTracker:
                 with open(TRACKER_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.scraped_urls = set(data.get('urls', []))
-                    print(f"📋 Loaded {len(self.scraped_urls)} previously scraped URLs")
+                    print(f"Loaded {len(self.scraped_urls)} previously scraped URLs")
             except Exception as e:
-                print(f"⚠️  Could not load scrape tracker: {e}")
+                print(f"WARNING: Could not load scrape tracker: {e}")
                 self.scraped_urls = set()
         else:
             self.scraped_urls = set()
@@ -41,7 +41,7 @@ class ScrapeTracker:
             with open(TRACKER_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"⚠️  Could not save scrape tracker: {e}")
+            print(f"WARNING: Could not save scrape tracker: {e}")
     
     def is_scraped(self, url: str) -> bool:
         """Check if URL has been scraped before"""
@@ -64,5 +64,5 @@ class ScrapeTracker:
         self.scraped_urls.clear()
         if os.path.exists(TRACKER_FILE):
             os.remove(TRACKER_FILE)
-        print("🗑️  Scrape tracker cleared")
+        print("Scrape tracker cleared")
 

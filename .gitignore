@@ -32,6 +32,10 @@ memory.db*
 
 # ChromaDB (vector database - too large to commit)
 chroma_db/
+**/chroma_db/
+*.sqlite3
+*.bin
+*.pickle
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/

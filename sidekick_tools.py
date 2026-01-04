@@ -28,7 +28,7 @@ if serper_api_key:
 
 async def playwright_tools():
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(headless=False)
+    browser = await playwright.chromium.launch(headless=True)
     toolkit = PlayWrightBrowserToolkit.from_browser(async_browser=browser)
     return toolkit.get_tools(), browser, playwright
 
@@ -135,7 +135,7 @@ def get_rag_tools(rag_system: RAGSystem):
                 
                 return f"Relevant information from college knowledge base:\n\n" + "\n---\n".join(context_parts) + sources_section
             else:
-                return "No relevant information found in the knowledge base. You may need to scrape the website first or the information might not be available."
+                return "No relevant information found in the knowledge base."
         except Exception as e:
             return f"Error querying knowledge base: {str(e)}"
     
@@ -256,7 +256,7 @@ def get_rag_tools(rag_system: RAGSystem):
     rag_query_tool = Tool(
         name="query_college_knowledge_base",
         func=query_college_knowledge_base,
-        description="Search the college knowledge base for information. Use this for questions about the college, courses, admissions, faculty, facilities, policies, events, or any college-related information."
+        description="MANDATORY: Search the college knowledge base for information. You MUST use this tool FIRST for ANY question about the college, courses, admissions, faculty, facilities, policies, events, or any college-related information. Do not answer college-related questions without using this tool first. The tool will return relevant information from the knowledge base along with source URLs."
     )
     
     scrape_tool = Tool(

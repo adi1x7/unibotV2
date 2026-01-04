@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://127.0.0.1:8000'; // FastAPI backend endpoint
+const API_BASE_URL = 'http://127.0.0.1:8001'; // FastAPI backend endpoint
 
 // DOM Elements
 const chatContainer = document.getElementById('chatContainer');
@@ -14,6 +14,7 @@ let conversationHistory = [];
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Frontend initialized, checking backend status...');
     checkBackendStatus();
     messageInput.focus();
 });
@@ -21,11 +22,29 @@ document.addEventListener('DOMContentLoaded', () => {
 // Check backend status
 async function checkBackendStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/health`);
+        // Create timeout controller for better browser compatibility
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const response = await fetch(`${API_BASE_URL}/health`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (response.ok) {
             const data = await response.json();
-            if (data.unibot_ready) {
-                statusText.textContent = 'Backend online';
+            console.log('Health check response:', data); // Debug log
+            
+            // Check both true and "true" (string) for compatibility
+            if (data.unibot_ready === true || data.unibot_ready === "true" || data.unibot_ready === 1) {
+                const docCount = data.knowledge_base_documents || 0;
+                statusText.textContent = `Backend online${docCount > 0 ? ` (${docCount} docs)` : ''}`;
                 statusText.parentElement.style.background = '#d1fae5';
                 statusText.parentElement.style.color = '#065f46';
             } else {
@@ -34,14 +53,24 @@ async function checkBackendStatus() {
                 statusText.parentElement.style.color = '#92400e';
             }
         } else {
-            throw new Error('Backend not responding');
+            throw new Error(`Backend returned status ${response.status}`);
         }
     } catch (error) {
-        statusText.textContent = 'Backend offline';
+        console.error('Health check error:', error); // Debug log
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+            statusText.textContent = 'Backend timeout';
+        } else if (error.message && error.message.includes('Failed to fetch')) {
+            statusText.textContent = 'Backend offline';
+        } else {
+            statusText.textContent = 'Backend offline';
+        }
         statusText.parentElement.style.background = '#fee2e2';
         statusText.parentElement.style.color = '#991b1b';
     }
 }
+
+// Periodically check backend status every 3 seconds
+setInterval(checkBackendStatus, 3000);
 
 // Handle suggested question click
 function askQuestion(question) {
@@ -74,22 +103,51 @@ async function sendMessage() {
     const thinkingId = addMessage('bot', 'Thinking...', true);
 
     try {
-        // Call FastAPI backend
+        // Check if backend is ready first
+        const healthController = new AbortController();
+        const healthTimeout = setTimeout(() => healthController.abort(), 2000);
+        
+        const healthCheck = await fetch(`${API_BASE_URL}/health`, {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'},
+            cache: 'no-cache',
+            signal: healthController.signal
+        });
+        
+        clearTimeout(healthTimeout);
+        
+        if (!healthCheck.ok) {
+            throw new Error('Backend is not ready. Please wait a moment and try again.');
+        }
+        
+        const healthData = await healthCheck.json();
+        if (!healthData.unibot_ready) {
+            throw new Error('UniBot is still initializing. Please wait a moment and try again.');
+        }
+        
+        // Call FastAPI backend with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+        
         const response = await fetch(`${API_BASE_URL}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
+            cache: 'no-cache',
+            signal: controller.signal,
             body: JSON.stringify({
                 message: message,
                 success_criteria: '',
                 history: conversationHistory
             })
         });
+        
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Failed to get response');
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
 
         const result = await response.json();
@@ -108,7 +166,19 @@ async function sendMessage() {
     } catch (error) {
         console.error('Error:', error);
         removeMessage(thinkingId);
-        addMessage('bot', 'Sorry, I encountered an error. Please make sure the backend is running and try again.');
+        
+        let errorMessage = 'Sorry, I encountered an error. ';
+        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+            errorMessage += 'The request took too long. Please try again with a simpler question.';
+        } else if (error.message.includes('not ready') || error.message.includes('initializing')) {
+            errorMessage += error.message;
+        } else if (error.message.includes('503')) {
+            errorMessage += 'The backend server is not ready. Please wait a moment and try again.';
+        } else {
+            errorMessage += 'Please make sure the backend is running and try again.';
+        }
+        
+        addMessage('bot', errorMessage);
     } finally {
         sendButton.disabled = false;
         messageInput.focus();

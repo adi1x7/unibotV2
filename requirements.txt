@@ -1,7 +1,7 @@
 gradio
 langgraph
 langchain
-langchain-openai
+langchain-google-genai
 langchain-community
 langchain-experimental
 langchain-text-splitters
@@ -19,4 +19,7 @@ lxml
 PyPDF2
 pdfplumber
 pypdf
+fastapi
+uvicorn[standard]
+python-multipart
 

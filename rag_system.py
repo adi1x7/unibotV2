@@ -3,7 +3,7 @@ RAG (Retrieval Augmented Generation) system for UniBot
 Handles document storage, embedding, and retrieval for college information
 """
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from typing import List, Optional
@@ -21,9 +21,17 @@ class RAGSystem:
             persist_directory: Directory to persist the vector database
             collection_name: Name of the collection in Chroma
         """
+        # Verify API key is set
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY environment variable is not set. "
+                "Please set it in your .env file or environment variables."
+            )
+        
         self.persist_directory = persist_directory
         self.collection_name = collection_name
-        self.embeddings = OpenAIEmbeddings()
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004")
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
@@ -134,10 +142,10 @@ class RAGSystem:
                 added_count += len(batch)
                 # Show progress for large batches
                 if total_chunks > batch_size:
-                    print(f"  📦 Added batch {i//batch_size + 1}: {added_count}/{total_chunks} chunks", flush=True)
+                    print(f"  [BATCH] Added batch {i//batch_size + 1}: {added_count}/{total_chunks} chunks", flush=True)
             
             # ChromaDB automatically persists, no need to call persist() in newer versions
-            print(f"✓ Added {added_count} chunks from {len(documents)} documents to knowledge base")
+            print(f"[OK] Added {added_count} chunks from {len(documents)} documents to knowledge base")
         except Exception as e:
             print(f"Error adding documents to vector store: {e}")
             raise

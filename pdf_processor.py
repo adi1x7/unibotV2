@@ -8,9 +8,27 @@ from io import BytesIO
 import PyPDF2
 import pdfplumber
 import os
-import signal
 import re
+import warnings
+import sys
 from contextlib import contextmanager
+
+# Suppress PDF parsing warnings (invalid color values, etc.)
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', message='.*gray.*color.*')
+warnings.filterwarnings('ignore', message='.*invalid float value.*')
+
+# Context manager to suppress stderr for PDF processing
+@contextmanager
+def suppress_stderr():
+    """Suppress stderr output temporarily"""
+    with open(os.devnull, 'w') as devnull:
+        old_stderr = sys.stderr
+        try:
+            sys.stderr = devnull
+            yield
+        finally:
+            sys.stderr = old_stderr
 
 class PDFProcessor:
     """Process PDF files and extract text content"""
@@ -67,25 +85,31 @@ class PDFProcessor:
         try:
             pdf_bytes.seek(0)
             text = ""
-            with pdfplumber.open(pdf_bytes) as pdf:
-                # Limit pages to prevent hanging on huge PDFs
-                pages_to_process = min(len(pdf.pages), max_pages)
-                for i, page in enumerate(pdf.pages[:pages_to_process]):
-                    try:
-                        # Try extracting text with layout preservation
-                        page_text = page.extract_text(layout=True)
-                        if not page_text:
-                            # Fallback to simple extraction
-                            page_text = page.extract_text()
-                        
-                        if page_text:
-                            # Clean up the text
-                            page_text = PDFProcessor._clean_text(page_text)
-                            if page_text:
-                                text += page_text + "\n"
-                    except Exception:
-                        # Skip problematic pages
-                        continue
+            # Suppress warnings and stderr during PDF processing
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with suppress_stderr():
+                    with pdfplumber.open(pdf_bytes) as pdf:
+                        # Limit pages to prevent hanging on huge PDFs
+                        pages_to_process = min(len(pdf.pages), max_pages)
+                        for i, page in enumerate(pdf.pages[:pages_to_process]):
+                            try:
+                                # Try extracting text with layout preservation
+                                with suppress_stderr():
+                                    page_text = page.extract_text(layout=True)
+                                if not page_text:
+                                    # Fallback to simple extraction
+                                    with suppress_stderr():
+                                        page_text = page.extract_text()
+                                
+                                if page_text:
+                                    # Clean up the text
+                                    page_text = PDFProcessor._clean_text(page_text)
+                                    if page_text:
+                                        text += page_text + "\n"
+                            except Exception:
+                                # Skip problematic pages
+                                continue
             return text.strip()
         except Exception:
             # Silently fail - errors are handled at higher level
@@ -212,8 +236,11 @@ class PDFProcessor:
         # Get page count
         try:
             pdf_bytes.seek(0)
-            with pdfplumber.open(pdf_bytes) as pdf:
-                page_count = len(pdf.pages)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with suppress_stderr():
+                    with pdfplumber.open(pdf_bytes) as pdf:
+                        page_count = len(pdf.pages)
         except Exception:
             pass
         

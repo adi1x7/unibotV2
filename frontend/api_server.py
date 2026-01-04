@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -21,7 +22,71 @@ from sidekick import UniBot
 
 load_dotenv(override=True)
 
-app = FastAPI(title="UniBot API")
+# Global UniBot instance
+unibot: Optional[UniBot] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup
+    global unibot
+    try:
+        # Check for API key before initialization
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            error_msg = (
+                "[ERROR] GOOGLE_API_KEY environment variable is not set. "
+                "Please set it in your .env file or environment variables."
+            )
+            print(error_msg)
+            raise ValueError(error_msg)
+        
+        college_url = os.getenv("COLLEGE_WEBSITE_URL", None)
+        print("[INFO] Initializing UniBot...")
+        print(f"[INFO] - Gemini API Key: {'Set' if google_api_key else 'Missing'}")
+        print(f"[INFO] - College URL: {college_url or 'Not set'}")
+        
+        unibot = UniBot(college_website_url=college_url)
+        await unibot.setup()
+        
+        print("[OK] UniBot initialized successfully")
+        print(f"[INFO] - Using Gemini model: gemini-2.5-flash")
+        print(f"[INFO] - Using embeddings: text-embedding-004")
+        
+        # Check if knowledge base has data
+        try:
+            stats = unibot.rag_system.get_stats()
+            doc_count = stats.get("total_documents", 0)
+            print(f"[INFO] - Knowledge base: {doc_count} documents")
+            if doc_count == 0:
+                print("[WARNING] Knowledge base is empty. Consider scraping the college website first.")
+        except Exception as e:
+            print(f"[WARNING] Could not check knowledge base stats: {e}")
+        
+        if college_url:
+            print(f"[INFO] - College website: {college_url}")
+        
+        print("[OK] API server is ready on http://127.0.0.1:8001")
+    except ValueError as e:
+        # Re-raise ValueError (API key missing)
+        print(f"[ERROR] Configuration error: {e}")
+        raise
+    except Exception as e:
+        print(f"[ERROR] Error initializing UniBot: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
+    yield
+    
+    # Shutdown
+    if unibot:
+        try:
+            unibot.cleanup()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+app = FastAPI(title="UniBot API", lifespan=lifespan)
 
 # Enable CORS for frontend
 app.add_middleware(
@@ -32,9 +97,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global UniBot instance
-unibot: Optional[UniBot] = None
-
 class MessageRequest(BaseModel):
     message: str
     success_criteria: Optional[str] = None
@@ -44,29 +106,6 @@ class MessageResponse(BaseModel):
     response: str
     history: List[Dict[str, Any]]
     status: str
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize UniBot on server startup"""
-    global unibot
-    try:
-        college_url = os.getenv("COLLEGE_WEBSITE_URL", None)
-        unibot = UniBot(college_website_url=college_url)
-        await unibot.setup()
-        print("✅ UniBot initialized successfully")
-    except Exception as e:
-        print(f"❌ Error initializing UniBot: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on server shutdown"""
-    global unibot
-    if unibot:
-        try:
-            unibot.cleanup()
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
 
 @app.get("/")
 async def root():
@@ -80,10 +119,21 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {
-        "status": "healthy",
+    global unibot
+    status = {
+        "status": "healthy" if unibot is not None else "initializing",
         "unibot_ready": unibot is not None
     }
+    
+    # Add additional info if ready
+    if unibot is not None:
+        try:
+            stats = unibot.rag_system.get_stats()
+            status["knowledge_base_documents"] = stats.get("total_documents", 0)
+        except:
+            pass
+    
+    return status
 
 def filter_feedback_messages(history):
     """Remove evaluator feedback messages from history"""
@@ -95,6 +145,33 @@ def filter_feedback_messages(history):
         if "Evaluator Feedback" not in str(content):
             filtered.append(msg)
     return filtered
+
+def extract_text_content(content):
+    """Extract text from content which might be a string, list, or dict"""
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        # Handle list of text blocks (e.g., [{'type': 'text', 'text': '...'}])
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict):
+                if 'text' in item:
+                    text_parts.append(item['text'])
+                elif 'content' in item:
+                    text_parts.append(extract_text_content(item['content']))
+            elif isinstance(item, str):
+                text_parts.append(item)
+        return '\n'.join(text_parts)
+    elif isinstance(content, dict):
+        # Handle dict with text field
+        if 'text' in content:
+            return content['text']
+        elif 'content' in content:
+            return extract_text_content(content['content'])
+        else:
+            return str(content)
+    else:
+        return str(content)
 
 @app.post("/api/chat", response_model=MessageResponse)
 async def chat(request: MessageRequest):
@@ -130,9 +207,14 @@ async def chat(request: MessageRequest):
         ]
         
         if assistant_messages:
-            response_text = assistant_messages[-1].get("content", "")
+            content = assistant_messages[-1].get("content", "")
+            response_text = extract_text_content(content)
         else:
             response_text = "I apologize, but I encountered an issue processing your request."
+        
+        # Ensure response_text is a string
+        if not isinstance(response_text, str):
+            response_text = str(response_text)
         
         return MessageResponse(
             response=response_text,
@@ -165,5 +247,5 @@ async def reset():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)
 

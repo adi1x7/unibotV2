@@ -23,7 +23,7 @@ playwright install chromium
 Create a `.env` file in the root directory with the following variables:
 
 **Required:**
-- `OPENAI_API_KEY` - Your OpenAI API key (required for the LLM and embeddings)
+- `GOOGLE_API_KEY` - Your Google Gemini API key (required for the LLM and embeddings)
 
 **Optional:**
 - `COLLEGE_WEBSITE_URL` - Base URL of your college website (e.g., "https://college.edu") - UniBot can scrape this automatically
@@ -33,14 +33,35 @@ Create a `.env` file in the root directory with the following variables:
 
 Example `.env` file:
 ```
-OPENAI_API_KEY=sk-your-openai-api-key-here
+GOOGLE_API_KEY=your-google-gemini-api-key-here
 COLLEGE_WEBSITE_URL=https://yourcollege.edu
 SERPER_API_KEY=your-serper-api-key-here
 PUSHOVER_TOKEN=your-pushover-token
 PUSHOVER_USER=your-pushover-user
 ```
 
-### 4. Run the Application
+### 4. Verify Configuration (Optional but Recommended)
+
+Before running the application, verify your setup:
+
+```bash
+python verify_gemini_setup.py
+```
+
+This will check:
+- ✅ API key is set
+- ✅ ChromaDB database exists
+- ✅ Required packages are installed
+- ✅ Models can be initialized
+
+## Models Used
+
+- **Chat Model**: `gemini-2.5-flash` - Fast, efficient response generation
+- **Embedding Model**: `text-embedding-004` - High-quality embeddings for RAG
+
+These models provide the best performance-to-cost ratio for the UniBot project.
+
+### 5. Run the Application
 
 **Option 1: Modern Web Frontend (Recommended)**
 ```bash
@@ -53,6 +74,15 @@ cd frontend
 python -m http.server 8080
 
 # Open http://localhost:8080 in your browser
+```
+
+**Or use the startup script:**
+```bash
+# Windows
+frontend/start_frontend.bat
+
+# Linux/Mac
+frontend/start_frontend.sh
 ```
 
 **Option 2: Gradio Interface (Alternative)**
