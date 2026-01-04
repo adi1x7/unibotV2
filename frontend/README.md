@@ -1,88 +1,61 @@
-# UniBot Frontend
+# UniBot React Frontend
 
-Modern web frontend for UniBot - College AI Assistant.
+This is the React-based frontend for UniBot, built with Vite.
 
-## Features
+## Prerequisites
 
-- Clean, modern UI design matching the design mockup
-- Real-time chat interface
-- Suggested questions for quick access
-- Backend status indicator
-- Responsive design for mobile and desktop
-- Markdown support for formatted messages
-- Clickable source links
-- No evaluator feedback shown to users
+- Node.js (v16 or higher)
+- npm or yarn
 
 ## Setup
 
-### 1. Install Frontend Dependencies
-
+1. Install dependencies:
 ```bash
-cd frontend
-pip install -r requirements.txt
+npm install
 ```
 
-### 2. Start the Backend API Server
-
-From the `frontend` directory:
+2. Start the development server:
 ```bash
-python api_server.py
+npm run dev
 ```
 
-Or from the root directory:
+The frontend will be available at `http://localhost:8080`
+
+## Build for Production
+
 ```bash
-cd frontend
-python api_server.py
+npm run build
 ```
 
-The API server will start on `http://127.0.0.1:8000`
+The built files will be in the `dist/` directory.
 
-### 3. Open the Frontend
+## Project Structure
 
-**Option 1: Using Python HTTP Server**
-```bash
-# In a new terminal, from the frontend directory
-python -m http.server 8080
 ```
-Then open http://localhost:8080 in your browser
-
-**Option 2: Using Node.js**
-```bash
-cd frontend
-npx serve
+frontend/
+├── src/
+│   ├── components/      # React components
+│   │   ├── Header.jsx
+│   │   ├── ChatContainer.jsx
+│   │   ├── InputArea.jsx
+│   │   └── WelcomeScreen.jsx
+│   ├── utils/           # Utility functions
+│   │   ├── api.js       # API calls
+│   │   └── formatter.js # Message formatting
+│   ├── App.jsx          # Main App component
+│   └── main.jsx         # Entry point
+├── index.html           # HTML template
+├── styles.css           # Global styles
+├── package.json         # Dependencies
+└── vite.config.js       # Vite configuration
 ```
 
-**Option 3: Direct File**
-- Simply double-click `index.html` to open in your browser
-- Note: Some browsers may block API calls due to CORS. Use a local server (Option 1 or 2) for best results.
+## Features
 
-## Configuration
-
-If you need to change the API port, update both:
-1. `api_server.py` - Change the port in `uvicorn.run(app, host="127.0.0.1", port=8000)`
-2. `app.js` - Change `API_BASE_URL` to match
-
-## Files
-
-- `index.html` - Main HTML structure
-- `styles.css` - Styling and layout (matches design mockup)
-- `app.js` - Frontend logic and API integration
-- `api_server.py` - FastAPI backend server
-- `requirements.txt` - Python dependencies for API server
-- `README.md` - This file
-
-## Architecture
-
-- **Frontend**: Pure HTML/CSS/JavaScript (no build step required)
-- **Backend**: FastAPI server that wraps UniBot functionality
-- **Communication**: REST API with JSON
-- **CORS**: Enabled for local development
-
-## Notes
-
-- The frontend connects to the FastAPI backend (not Gradio)
-- Evaluator feedback is automatically filtered out
-- Source links are clickable and open in new tabs
-- The interface is fully responsive for mobile devices
-- Backend status is checked automatically and shown in the header
+- React-based component architecture
+- Real-time chat interface
+- Backend status monitoring
+- Message formatting (markdown support)
+- Responsive design
+- Auto-scrolling chat
 

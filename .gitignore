@@ -47,7 +47,17 @@ Thumbs.db
 # Logs
 *.log
 
-# Scrape tracker
+# Scrape tracker and checkpoint files (runtime data)
 scrape_tracker.json
 scrape_checkpoint.json
+
+# Sandbox directory (for file operations)
+sandbox/
+
+# Node.js / React
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.log
 

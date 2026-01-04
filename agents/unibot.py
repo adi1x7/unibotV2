@@ -9,8 +9,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from typing import List, Any, Optional, Dict
 from pydantic import BaseModel, Field
-from sidekick_tools import playwright_tools, other_tools
-from rag_system import RAGSystem
+import sys
+from pathlib import Path
+# Add parent directory to path
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+
+from agents.tools import playwright_tools, other_tools
+from retrieval.rag_system import RAGSystem
 import uuid
 import asyncio
 import os

@@ -7,8 +7,14 @@ from langchain_core.tools import Tool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_experimental.tools import PythonREPLTool
 from langchain_community.utilities import GoogleSerperAPIWrapper
-from rag_system import RAGSystem
-from college_scraper import CollegeScraper
+import sys
+from pathlib import Path
+# Add parent directory to path
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+
+from retrieval.rag_system import RAGSystem
+from ingestion.scraper import CollegeScraper
 
 
 

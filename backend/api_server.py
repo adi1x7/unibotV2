@@ -18,9 +18,13 @@ from contextlib import asynccontextmanager
 import asyncio
 import os
 from dotenv import load_dotenv
-from sidekick import UniBot
+from agents.unibot import UniBot
+from agents.intent_detector import IntentDetector
 
 load_dotenv(override=True)
+
+# Initialize intent detector
+intent_detector = IntentDetector()
 
 # Global UniBot instance
 unibot: Optional[UniBot] = None
@@ -183,6 +187,18 @@ async def chat(request: MessageRequest):
     
     if not request.message or not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    
+    # Validate query is college-domain only
+    is_valid, rejection_message = intent_detector.validate_query(request.message)
+    if not is_valid:
+        return MessageResponse(
+            response=rejection_message,
+            history=request.history or [],
+            status="rejected"
+        )
+    
+    # Detect intent
+    intent_info = intent_detector.get_intent_info(request.message)
     
     try:
         # Filter existing feedback from history

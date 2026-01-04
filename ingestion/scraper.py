@@ -9,9 +9,9 @@ from urllib.parse import urljoin, urlparse
 import re
 import os
 from datetime import datetime
-from pdf_processor import PDFProcessor
-from scrape_tracker import ScrapeTracker
-from scrape_checkpoint import ScrapeCheckpoint
+from .pdf_processor import PDFProcessor
+from .scrape_tracker import ScrapeTracker
+from .scrape_checkpoint import ScrapeCheckpoint
 
 class CollegeScraper:
     def __init__(self, base_url: str, max_pages: int = 500, max_depth: int = 8, include_pdfs: bool = True):

@@ -4,78 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UniBot - Your College AI Assistant</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-left">
-                <div class="logo">
-                    <div class="logo-icon">🤖</div>
-                </div>
-                <div class="header-text">
-                    <h1>UniBot</h1>
-                    <p>BMSIT College AI Assistant</p>
-                </div>
-            </div>
-            <div class="header-right">
-                <div class="status-indicator">
-                    <span class="status-dot"></span>
-                    <span id="status-text">Backend online</span>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Chat Area -->
-        <main class="chat-container" id="chatContainer">
-            <!-- Welcome Screen -->
-            <div class="welcome-screen" id="welcomeScreen">
-                <div class="welcome-icon">🤖</div>
-                <h2>Welcome to UniBot!</h2>
-                <p>Ask me anything about BMSIT - fees, admissions, academics, events, and more.</p>
-                
-                <!-- Suggested Questions -->
-                <div class="suggested-questions">
-                    <button class="suggestion-btn" onclick="askQuestion('What is the fee structure for B.Tech?')">
-                        What is the fee structure for B.Tech?
-                    </button>
-                    <button class="suggestion-btn" onclick="askQuestion('When is the last date for exam registration?')">
-                        When is the last date for exam registration?
-                    </button>
-                    <button class="suggestion-btn" onclick="askQuestion('Tell me about placement statistics')">
-                        Tell me about placement statistics
-                    </button>
-                    <button class="suggestion-btn" onclick="askQuestion('What are the hostel facilities?')">
-                        What are the hostel facilities?
-                    </button>
-                </div>
-            </div>
-
-            <!-- Chat Messages -->
-            <div class="messages" id="messages"></div>
-        </main>
-
-        <!-- Input Area -->
-        <footer class="input-area">
-            <div class="input-container">
-                <input 
-                    type="text" 
-                    id="messageInput" 
-                    placeholder="Ask about fees, admissions, academics..."
-                    onkeypress="handleKeyPress(event)"
-                />
-                <button id="sendButton" onclick="sendMessage()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                </button>
-            </div>
-        </footer>
-    </div>
-
-    <script src="app.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
-

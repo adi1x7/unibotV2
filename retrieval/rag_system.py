@@ -31,6 +31,8 @@ class RAGSystem:
         
         self.persist_directory = persist_directory
         self.collection_name = collection_name
+        # Using text-embedding-004 (Google's embedding model)
+        # Note: gemini-embedding-001 is not available, text-embedding-004 is the current model
         self.embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004")
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -180,15 +182,16 @@ class RAGSystem:
         
         self.add_documents([content], [metadata])
     
-    def search(self, query: str, k: int = 4, filter_type: Optional[str] = None, filter_category: Optional[str] = None) -> List[Document]:
+    def search(self, query: str, k: int = 4, filter_type: Optional[str] = None, filter_category: Optional[str] = None, use_hybrid: bool = True) -> List[Document]:
         """
-        Search for relevant documents using similarity search
+        Search for relevant documents using semantic similarity or hybrid search
         
         Args:
             query: Search query
             k: Number of documents to retrieve
             filter_type: Optional filter by content type (e.g., "syllabus", "pdf", "course_info")
             filter_category: Optional filter by category (e.g., "academic", "admission", "facilities")
+            use_hybrid: If True, use hybrid search (semantic + keyword), else semantic only
             
         Returns:
             List of relevant Document objects
@@ -197,22 +200,86 @@ class RAGSystem:
             return []
         
         # Build filter if needed
-        # ChromaDB requires filters in a specific format - use only one filter at a time
-        # If both are provided, prefer filter_type
         where_filter = None
         if filter_type:
             where_filter = {"type": filter_type}
         elif filter_category:
             where_filter = {"category": filter_category}
         
-        if where_filter:
+        if use_hybrid:
+            # Hybrid search: combine semantic similarity with keyword matching
             try:
-                return self.vectorstore.similarity_search(query, k=k, filter=where_filter)
-            except Exception:
-                # If filtered search fails, fall back to unfiltered search
-                return self.vectorstore.similarity_search(query, k=k)
+                # Get semantic results
+                semantic_docs = self.vectorstore.similarity_search(query, k=k*2, filter=where_filter) if where_filter else self.vectorstore.similarity_search(query, k=k*2)
+                
+                # Get keyword-based results (using BM25-like approach via metadata search)
+                # Extract keywords from query
+                query_keywords = set(query.lower().split())
+                
+                # Score documents based on keyword matches in content and metadata
+                scored_docs = []
+                all_docs = self.vectorstore.similarity_search(query, k=min(k*3, 50))  # Get more candidates
+                
+                for doc in all_docs:
+                    score = 0.0
+                    content_lower = doc.page_content.lower()
+                    metadata_str = str(doc.metadata).lower()
+                    
+                    # Count keyword matches
+                    for keyword in query_keywords:
+                        if len(keyword) > 2:  # Only meaningful keywords
+                            score += content_lower.count(keyword) * 0.1
+                            score += metadata_str.count(keyword) * 0.2
+                    
+                    scored_docs.append((doc, score))
+                
+                # Sort by score and combine with semantic results
+                scored_docs.sort(key=lambda x: x[1], reverse=True)
+                keyword_docs = [doc for doc, score in scored_docs[:k] if score > 0]
+                
+                # Combine semantic and keyword results, removing duplicates
+                combined = {}
+                for doc in semantic_docs[:k]:
+                    doc_id = id(doc)  # Use object id as key
+                    combined[doc_id] = doc
+                
+                for doc in keyword_docs:
+                    doc_id = id(doc)
+                    if doc_id not in combined:
+                        combined[doc_id] = doc
+                
+                result = list(combined.values())[:k]
+                
+                # Apply filter if needed
+                if where_filter:
+                    filtered_result = []
+                    for doc in result:
+                        if filter_type and doc.metadata.get("type") == filter_type:
+                            filtered_result.append(doc)
+                        elif filter_category and doc.metadata.get("category") == filter_category:
+                            filtered_result.append(doc)
+                    return filtered_result[:k] if filtered_result else result[:k]
+                
+                return result[:k]
+            except Exception as e:
+                # Fall back to semantic search if hybrid fails
+                print(f"Hybrid search failed, using semantic only: {e}")
+                if where_filter:
+                    try:
+                        return self.vectorstore.similarity_search(query, k=k, filter=where_filter)
+                    except:
+                        return self.vectorstore.similarity_search(query, k=k)
+                else:
+                    return self.vectorstore.similarity_search(query, k=k)
         else:
-            return self.vectorstore.similarity_search(query, k=k)
+            # Semantic search only
+            if where_filter:
+                try:
+                    return self.vectorstore.similarity_search(query, k=k, filter=where_filter)
+                except:
+                    return self.vectorstore.similarity_search(query, k=k)
+            else:
+                return self.vectorstore.similarity_search(query, k=k)
     
     def search_with_scores(self, query: str, k: int = 4):
         """

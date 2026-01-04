@@ -14,12 +14,21 @@ def check_python_version():
 
 def check_dependencies():
     """Check if required packages are installed"""
-    required = ['fastapi', 'uvicorn', 'langchain_google_genai', 'langgraph']
+    # Map package names to their import names
+    required = {
+        'fastapi': 'fastapi',
+        'uvicorn': 'uvicorn',
+        'langchain-google-genai': 'langchain_google_genai',
+        'langgraph': 'langgraph',
+        'langchain-chroma': 'langchain_chroma',
+        'playwright': 'playwright',
+        'chromadb': 'chromadb'
+    }
     missing = []
     
-    for package in required:
+    for package, import_name in required.items():
         try:
-            __import__(package.replace('-', '_'))
+            __import__(import_name)
             print(f"[OK] {package} is installed")
         except ImportError:
             print(f"[ERROR] {package} is NOT installed")

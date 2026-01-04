@@ -1,6 +1,7 @@
 """
 PDF processor for UniBot
 Extracts text content from PDF files found on college websites
+Supports both text-based and scanned PDFs using Tesseract OCR
 """
 from typing import Optional, Dict
 import requests
@@ -12,6 +13,22 @@ import re
 import warnings
 import sys
 from contextlib import contextmanager
+
+# Try to import Tesseract OCR (optional dependency)
+try:
+    from PIL import Image
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    TESSERACT_AVAILABLE = False
+    pytesseract = None
+
+# Try to import pdf2image for converting PDF pages to images
+try:
+    from pdf2image import convert_from_bytes
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
 
 # Suppress PDF parsing warnings (invalid color values, etc.)
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -257,6 +274,17 @@ class PDFProcessor:
                 except Exception:
                     pass
         
+        # If still no text, try OCR for scanned PDFs
+        if (not text or len(text) < 50) and TESSERACT_AVAILABLE and PDF2IMAGE_AVAILABLE:
+            try:
+                pdf_bytes.seek(0)
+                ocr_text = PDFProcessor.extract_text_ocr(pdf_bytes, max_pages=10)  # Limit OCR to first 10 pages
+                if ocr_text and len(ocr_text) > 50:
+                    text = ocr_text
+                    print(f"  ✓ Used OCR for scanned PDF")
+            except Exception as e:
+                print(f"  ⚠ OCR failed: {e}")
+        
         if not text or len(text) < 50:
             return None
         
@@ -291,6 +319,42 @@ class PDFProcessor:
             'quality_score': quality_score,
             'page_count': page_count
         }
+    
+    @staticmethod
+    def extract_text_ocr(pdf_bytes: BytesIO, max_pages: int = 10) -> str:
+        """
+        Extract text from scanned PDF using Tesseract OCR
+        
+        Args:
+            pdf_bytes: PDF file as BytesIO
+            max_pages: Maximum number of pages to process (OCR is slow)
+            
+        Returns:
+            Extracted text string
+        """
+        if not TESSERACT_AVAILABLE or not PDF2IMAGE_AVAILABLE:
+            return ""
+        
+        try:
+            pdf_bytes.seek(0)
+            # Convert PDF pages to images
+            images = convert_from_bytes(pdf_bytes.read(), first_page=1, last_page=max_pages, dpi=300)
+            
+            text_parts = []
+            for i, image in enumerate(images):
+                try:
+                    # Perform OCR on the image
+                    page_text = pytesseract.image_to_string(image, lang='eng')
+                    if page_text:
+                        text_parts.append(page_text)
+                except Exception as e:
+                    print(f"  ⚠ OCR error on page {i+1}: {e}")
+                    continue
+            
+            return '\n'.join(text_parts).strip()
+        except Exception as e:
+            print(f"  ⚠ OCR processing error: {e}")
+            return ""
     
     @staticmethod
     def process_pdf_url(url: str) -> Optional[Dict[str, str]]:

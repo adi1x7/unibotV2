@@ -1,7 +1,14 @@
 """
 Utility script to inspect what's stored in the UniBot knowledge base
 """
-from rag_system import RAGSystem
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+
+from retrieval.rag_system import RAGSystem
 import os
 
 def inspect_knowledge_base():
