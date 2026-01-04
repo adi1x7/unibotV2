@@ -3,91 +3,120 @@
 export function formatMessage(content) {
   if (!content) return ''
 
-  let formatted = content
-
-  // First, handle numbered lists with bold headers (e.g., "1. **Academic...**")
-  // This pattern handles: "1. **Title**" or "1. Title:" format
-  formatted = formatted.replace(/^(\d+)\.\s+\*\*(.+?)\*\*(.*)$/gim, '<li><strong>$2</strong>$3</li>')
-  formatted = formatted.replace(/^(\d+)\.\s+(.+?):\s*(.*)$/gim, '<li><strong>$2:</strong> $3</li>')
-  
-  // Headers (## Header or ### Header) - do this before numbered lists
-  formatted = formatted.replace(/^### (.*$)/gim, '<h3>$1</h3>')
-  formatted = formatted.replace(/^## (.*$)/gim, '<h2>$1</h2>')
-  formatted = formatted.replace(/^# (.*$)/gim, '<h1>$1</h1>')
-
-  // Bold (**text** or __text__)
-  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  formatted = formatted.replace(/__(.*?)__/g, '<strong>$1</strong>')
-
-  // Italic (*text* or _text_) - but not if it's part of bold
-  formatted = formatted.replace(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
-  formatted = formatted.replace(/(?<!_)_(?!_)([^_]+?)(?<!_)_(?!_)/g, '<em>$1</em>')
-
-  // Links [text](url)
-  formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-
-  // Dates (format: YYYY-MM-DD or DD/MM/YYYY)
-  formatted = formatted.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, '<time>$1</time>')
-  formatted = formatted.replace(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/g, '<time>$1</time>')
-
-  // Split into lines for better processing
-  const lines = formatted.split('\n')
+  // Split into lines for processing
+  const lines = content.split('\n')
   const processedLines = []
   let inList = false
   let listType = null
-  let listItems = []
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+    const line = lines[i]
+    const trimmedLine = line.trim()
     
+    // Handle empty lines
+    if (!trimmedLine) {
+      if (inList) {
+        processedLines.push(`</${listType}>`)
+        inList = false
+        listType = null
+      }
+      // Don't add breaks inside lists or immediately after lists
+      if (processedLines.length > 0) {
+        const last = processedLines[processedLines.length - 1]
+        if (!last.match(/^<\/(ul|ol|p|h[1-6])/)) {
+          processedLines.push('<br>')
+        }
+      }
+      continue
+    }
+
+    // Check for headers first
+    const h3Match = trimmedLine.match(/^###\s+(.+)$/)
+    const h2Match = trimmedLine.match(/^##\s+(.+)$/)
+    const h1Match = trimmedLine.match(/^#\s+(.+)$/)
+    
+    if (h3Match) {
+      if (inList) {
+        processedLines.push(`</${listType}>`)
+        inList = false
+        listType = null
+      }
+      processedLines.push(`<h3>${formatInline(h3Match[1])}</h3>`)
+      continue
+    }
+    
+    if (h2Match) {
+      if (inList) {
+        processedLines.push(`</${listType}>`)
+        inList = false
+        listType = null
+      }
+      processedLines.push(`<h2>${formatInline(h2Match[1])}</h2>`)
+      continue
+    }
+    
+    if (h1Match) {
+      if (inList) {
+        processedLines.push(`</${listType}>`)
+        inList = false
+        listType = null
+      }
+      processedLines.push(`<h1>${formatInline(h1Match[1])}</h1>`)
+      continue
+    }
+
     // Check for numbered list items (1. or 1) format)
-    const numberedMatch = line.match(/^(\d+)[\.\)]\s+(.+)$/)
+    const numberedMatch = trimmedLine.match(/^(\d+)[\.\)]\s+(.+)$/)
+    
     // Check for bullet points (- or *)
-    const bulletMatch = line.match(/^[\-\*]\s+(.+)$/)
+    const bulletMatch = trimmedLine.match(/^[\-\*]\s+(.+)$/)
+    
+    // Check for bold text followed by colon (like "**Department:** Name")
+    // This pattern indicates a structured list item
+    const boldColonMatch = trimmedLine.match(/^\*\*(.+?)\*\*:\s*(.+)$/)
     
     if (numberedMatch) {
+      // Numbered list item
       if (!inList || listType !== 'ol') {
         if (inList) {
-          // Close previous list
           processedLines.push(`</${listType}>`)
         }
         processedLines.push('<ol>')
         inList = true
         listType = 'ol'
       }
-      processedLines.push(`<li>${numberedMatch[2]}</li>`)
+      processedLines.push(`<li>${formatInline(numberedMatch[2])}</li>`)
     } else if (bulletMatch) {
+      // Bullet list item
       if (!inList || listType !== 'ul') {
         if (inList) {
-          // Close previous list
           processedLines.push(`</${listType}>`)
         }
         processedLines.push('<ul>')
         inList = true
         listType = 'ul'
       }
-      processedLines.push(`<li>${bulletMatch[1]}</li>`)
+      processedLines.push(`<li>${formatInline(bulletMatch[1])}</li>`)
+    } else if (boldColonMatch) {
+      // Bold text with colon - treat as list item for better formatting
+      if (!inList || listType !== 'ul') {
+        if (inList) {
+          processedLines.push(`</${listType}>`)
+        }
+        processedLines.push('<ul>')
+        inList = true
+        listType = 'ul'
+      }
+      // Format the bold part and the text after colon
+      processedLines.push(`<li><strong>${escapeHtml(boldColonMatch[1])}</strong>: ${formatInline(boldColonMatch[2])}</li>`)
     } else {
-      // Not a list item
+      // Regular paragraph
       if (inList) {
         processedLines.push(`</${listType}>`)
         inList = false
         listType = null
       }
-      
-      if (line) {
-        // Check if it's already HTML (starts with <)
-        if (line.startsWith('<')) {
-          processedLines.push(line)
-        } else {
-          processedLines.push(`<p>${line}</p>`)
-        }
-      } else {
-        // Empty line - add paragraph break
-        if (processedLines.length > 0 && !processedLines[processedLines.length - 1].startsWith('<p>')) {
-          processedLines.push('<br>')
-        }
-      }
+      processedLines.push(`<p>${formatInline(trimmedLine)}</p>`)
     }
   }
   
@@ -96,13 +125,102 @@ export function formatMessage(content) {
     processedLines.push(`</${listType}>`)
   }
 
-  formatted = processedLines.join('\n')
-
+  let formatted = processedLines.join('')
+  
+  // Clean up multiple consecutive breaks
+  formatted = formatted.replace(/(<br>\s*){3,}/g, '<br><br>')
+  
+  // Clean up breaks before closing tags
+  formatted = formatted.replace(/<br>\s*(<\/[^>]+>)/g, '$1')
+  
+  // Clean up breaks after opening tags (except <br> itself)
+  formatted = formatted.replace(/(<[^/>]+>)\s*<br>/g, '$1')
+  
   // Clean up empty paragraphs
   formatted = formatted.replace(/<p>\s*<\/p>/g, '')
-  formatted = formatted.replace(/<p><p>/g, '<p>')
-  formatted = formatted.replace(/<\/p><\/p>/g, '</p>')
-
+  
   return formatted
 }
 
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// Format inline elements (bold, italic, links, etc.)
+// IMPORTANT: Apply markdown formatting BEFORE escaping HTML
+function formatInline(text) {
+  if (!text) return ''
+  
+  let formatted = text
+  
+  // Use a placeholder approach to protect HTML we create
+  const placeholders = []
+  let placeholderIndex = 0
+  
+  // Links [text](url) - handle first
+  formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkText)}</a>`
+    placeholderIndex++
+    return placeholder
+  })
+  
+  // Bold (**text** or __text__)
+  formatted = formatted.replace(/\*\*([^*]+?)\*\*/g, (match, content) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<strong>${escapeHtml(content)}</strong>`
+    placeholderIndex++
+    return placeholder
+  })
+  formatted = formatted.replace(/__([^_]+?)__/g, (match, content) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<strong>${escapeHtml(content)}</strong>`
+    placeholderIndex++
+    return placeholder
+  })
+  
+  // Italic (*text* or _text_) - single asterisks/underscores (not part of bold)
+  formatted = formatted.replace(/(?<!\*)\*([^*\s][^*]*?[^*\s])\*(?!\*)/g, (match, content) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<em>${escapeHtml(content)}</em>`
+    placeholderIndex++
+    return placeholder
+  })
+  formatted = formatted.replace(/(?<!_)_([^_\s][^_]*?[^_\s])_(?!_)/g, (match, content) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<em>${escapeHtml(content)}</em>`
+    placeholderIndex++
+    return placeholder
+  })
+  
+  // Dates (format: YYYY-MM-DD or DD/MM/YYYY)
+  formatted = formatted.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (match, date) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<time>${date}</time>`
+    placeholderIndex++
+    return placeholder
+  })
+  formatted = formatted.replace(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/g, (match, date) => {
+    const placeholder = `__PLACEHOLDER_${placeholderIndex}__`
+    placeholders[placeholderIndex] = `<time>${date}</time>`
+    placeholderIndex++
+    return placeholder
+  })
+  
+  // Escape any remaining text (that wasn't part of markdown)
+  formatted = escapeHtml(formatted)
+  
+  // Restore placeholders (which contain our HTML)
+  placeholders.forEach((html, index) => {
+    formatted = formatted.replace(`__PLACEHOLDER_${index}__`, html)
+  })
+  
+  return formatted
+}

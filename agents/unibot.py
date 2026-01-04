@@ -123,6 +123,10 @@ class UniBot:
     Question: please clarify whether you want a summary or a detailed answer
 
     If you've finished, reply with the final answer, and don't ask a question; simply reply with the answer.
+    
+    IMPORTANT: Do NOT include your internal reasoning, thought process, or evaluation of previous responses in your reply.
+    Only provide the direct answer to the user's question or your question for clarification.
+    Do NOT mention "my mistake", "previous rejection", "re-evaluating", or similar internal reasoning.
     """
         
         if state.get("feedback_on_work"):
@@ -130,7 +134,8 @@ class UniBot:
     Previously you thought you completed the assignment, but your reply was rejected because the success criteria was not met.
     Here is the feedback on why this was rejected:
     {state['feedback_on_work']}
-    With this feedback, please continue the assignment, ensuring that you meet the success criteria or have a question for the user."""
+    Use this feedback to improve your response, but do NOT mention the feedback, rejection, or your reasoning process in your reply to the user.
+    Simply provide the corrected answer directly without explaining what went wrong before."""
         
         # Add in the system message
 

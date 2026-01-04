@@ -150,6 +150,75 @@ def filter_feedback_messages(history):
             filtered.append(msg)
     return filtered
 
+def clean_response(response: str) -> str:
+    """
+    Remove internal reasoning and chain-of-thought content from LLM responses.
+    This function only filters responses that clearly contain internal reasoning patterns.
+    Normal responses pass through unchanged.
+    """
+    if not response or not isinstance(response, str):
+        return response
+    
+    # Patterns that indicate internal reasoning (very specific patterns)
+    reasoning_patterns = [
+        "with this feedback, i need to re-evaluate",
+        "in the turn before the last rejected response",
+        "my mistake was in stating",
+        "therefore, the correct approach is",
+        "let's re-examine the output",
+        "let me re-examine the output",
+        "the previous rejection was valid",
+        "revised plan:",
+        "my previous response:",
+    ]
+    
+    # Patterns that indicate actual response content
+    response_start_patterns = [
+        "i apologize",
+        "the knowledge base",
+        "based on the",
+        "according to the",
+        "here are",
+        "here is",
+        "the following",
+        "question:",
+    ]
+    
+    response_lower = response.lower()
+    
+    # Only filter if we find VERY specific reasoning patterns (not just individual words)
+    # This is more conservative to avoid filtering normal responses
+    has_reasoning = any(pattern in response_lower for pattern in reasoning_patterns)
+    
+    # If no reasoning patterns, return original immediately (normal response)
+    if not has_reasoning:
+        return response
+    
+    # Response has reasoning - try to find where actual response starts
+    lines = response.split('\n')
+    
+    # Look for response start pattern and include everything from there
+    for i, line in enumerate(lines):
+        line_lower = line.lower().strip()
+        if any(pattern in line_lower for pattern in response_start_patterns):
+            # Found response start - include from here
+            cleaned = '\n'.join(lines[i:]).strip()
+            # Only return if we got something reasonable
+            if len(cleaned) >= 20:
+                return cleaned
+    
+    # If no clear response start found, try last paragraph (often contains the answer)
+    paragraphs = response.split('\n\n')
+    for para in reversed(paragraphs):
+        para_lower = para.lower().strip()
+        # Use last substantial paragraph that doesn't look like reasoning
+        if len(para.strip()) > 50 and not any(pattern in para_lower for pattern in reasoning_patterns):
+            if any(pattern in para_lower for pattern in response_start_patterns):
+                return para.strip()
+    
+    # If all else fails, return original (better to show reasoning than lose response entirely)
+    return response
+
 def extract_text_content(content):
     """Extract text from content which might be a string, list, or dict"""
     if isinstance(content, str):
@@ -231,6 +300,10 @@ async def chat(request: MessageRequest):
         # Ensure response_text is a string
         if not isinstance(response_text, str):
             response_text = str(response_text)
+        
+        # Clean response to remove internal reasoning (only if response is not empty)
+        if response_text and len(response_text.strip()) > 0:
+            response_text = clean_response(response_text)
         
         return MessageResponse(
             response=response_text,

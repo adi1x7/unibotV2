@@ -175,12 +175,12 @@ You need to start both the backend API server and the frontend development serve
    ```
 
 3. **Install dependencies (only needed the first time):**
-   ```bash
+```bash
    npm install
-   ```
+```
 
 4. **Start the Vite development server:**
-   ```bash
+```bash
    npm run dev
    ```
 
