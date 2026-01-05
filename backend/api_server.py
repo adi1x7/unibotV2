@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
         
         print("[OK] UniBot initialized successfully")
         print(f"[INFO] - Using Gemini model: gemini-2.5-flash")
-        print(f"[INFO] - Using embeddings: text-embedding-004")
+        print(f"[INFO] - Using embeddings: gemini-embedding-001")
         
         # Check if knowledge base has data
         try:
